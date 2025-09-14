@@ -1,0 +1,133 @@
+run:
+  timeout: 5m
+  go: '1.23'
+
+linters-settings:
+  gocyclo:
+    min-complexity: 20
+  goconst:
+    min-len: 3
+    min-occurrences: 3
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - performance
+    disabled-checks:
+      - dupImport
+      - ifElseChain
+      - octalLiteral
+      - whyNoLint
+      - wrapperFunc
+      - unnamedResult
+      - assignOp
+      - filepathJoin
+  gocognit:
+    min-complexity: 25
+  gofmt:
+    simplify: true
+  goimports:
+    local-prefixes: github.com/ZonCen/dotman
+  gosec:
+    excludes:
+      - G301  # Expect directory permissions to be 0750 or less
+      - G304  # Potential file inclusion via variable
+      - G306  # Expect WriteFile permissions to be 0600 or less
+  govet:
+    check-shadowing: false
+  lll:
+    line-length: 120
+  misspell:
+    locale: US
+  nolintlint:
+    allow-leading-space: true
+    allow-unused: true
+    require-explanation: false
+    require-specific: false
+
+linters:
+  enable:
+    - errcheck
+    - gocyclo
+    - gofmt
+    - goimports
+    - gosec
+    - gosimple
+    - govet
+    - ineffassign
+    - lll
+    - misspell
+    - staticcheck
+    - typecheck
+    - unused
+    - whitespace
+
+  disable:
+    - depguard
+    - gochecknoinits
+    - goconst
+    - gocritic
+    - funlen
+    - gochecknoglobals
+    - gocognit
+    - godot
+    - godox
+    - goerr113
+    - interfacer
+    - maligned
+    - prealloc
+    - scopelint
+    - wsl
+    - bodyclose
+    - deadcode
+    - dogsled
+    - dupl
+    - exportloopref
+    - exhaustive
+    - golint
+    - gomnd
+    - goprintffuncname
+    - nakedret
+    - noctx
+    - nolintlint
+    - rowserrcheck
+    - structcheck
+    - stylecheck
+    - unconvert
+    - unparam
+    - varcheck
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gocyclo
+        - goconst
+        - funlen
+        - dupl
+        - lll
+        - gosec
+    - path: cmd/
+      linters:
+        - gocyclo
+        - funlen
+        - gochecknoinits
+    - path: internal/testutils/
+      linters:
+        - gocyclo
+        - funlen
+        - goconst
+        - gosec
+    - path: internal/manager/
+      linters:
+        - gocyclo
+        - funlen
+    - text: "shadow: declaration of"
+      linters:
+        - govet
+    - text: "ST1000: at least one file in a package should have a package comment"
+      linters:
+        - stylecheck
+
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
