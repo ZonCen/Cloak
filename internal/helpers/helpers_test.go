@@ -4,29 +4,28 @@ import (
 	"fmt"
 	"os"
 	"testing"
+
+	testutils "github.com/ZonCen/Cloak/internal/testUtils"
 )
 
 func TestOpenFile(t *testing.T) {
-	tmpFile, err := os.CreateTemp("", "testfile_*.txt")
+	tmpFile, err := testutils.CreateTempFile()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Failed to create temp file: %v", err)
 	}
 
 	defer func() {
 		if err := os.Remove(tmpFile.Name()); err != nil {
-			fmt.Printf("Failed to remove temp file: %v\n", err)
+			fmt.Println("Failed to remove temp file:", err)
 		}
 	}()
 	defer func() {
 		if err := tmpFile.Close(); err != nil {
-			fmt.Printf("Failed to close temp file: %v\n", err)
+			fmt.Println("Failed to close temp file:", err)
 		}
 	}()
 
 	content := []byte("Hello, World!")
-	if _, err := tmpFile.Write(content); err != nil {
-		t.Fatal(err)
-	}
 
 	tests := []struct {
 		name      string
@@ -75,26 +74,12 @@ func TestWriteFile(t *testing.T) {
 }
 
 func TestReadFile(t *testing.T) {
-	tmpfile, err := os.CreateTemp("", "testfile_*.txt")
+	tmpFile, err := testutils.CreateTempFile()
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
 
-	defer func() {
-		if err := os.Remove(tmpfile.Name()); err != nil {
-			fmt.Printf("Failed to remove temp file: %v\n", err)
-		}
-	}()
-	defer func() {
-		if err := tmpfile.Close(); err != nil {
-			fmt.Printf("Failed to close temp file: %v\n", err)
-		}
-	}()
-
 	content := []byte("Hello, World!")
-	if _, err := tmpfile.Write(content); err != nil {
-		t.Fatalf("Failed to write to temp file: %v", err)
-	}
 
 	tests := []struct {
 		name      string
@@ -102,7 +87,7 @@ func TestReadFile(t *testing.T) {
 		wantErr   bool
 		wantBytes []byte
 	}{
-		{"file exists", tmpfile.Name(), false, content},
+		{"file exists", tmpFile.Name(), false, content},
 		{"file does not exist", "non_existent_file.txt", true, nil},
 	}
 

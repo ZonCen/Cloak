@@ -8,6 +8,34 @@ import (
 	"github.com/ZonCen/Cloak/internal/helpers"
 )
 
+func IsEncryptedFile(path string) (bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer func() {
+		if err := f.Close(); err != nil {
+			panic(err)
+		}
+	}()
+
+	header := make([]byte, 5)
+	n, err := f.Read(header)
+	if err != nil {
+		return false, fmt.Errorf("failed to read file header: %w", err)
+	}
+
+	if n < 5 {
+		return false, fmt.Errorf("file too short to be a valid Cloak encrypted file")
+	}
+
+	if string(header[:4]) == "CLOK" && header[4] == 1 {
+		return true, nil
+	}
+
+	return false, nil
+}
+
 func ExtractNonce(data []byte, gcm cipher.AEAD) ([]byte, []byte, error) {
 	nonceSize := gcm.NonceSize()
 	if len(data) < nonceSize {

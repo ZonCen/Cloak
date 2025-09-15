@@ -24,20 +24,25 @@ var decryptCmd = &cobra.Command{
 			return
 		}
 
-		helpers.LogVerbose("Checking if file exists and have correct suffix")
+		helpers.LogVerbose("Checking if file exists and is a vault file")
 		_, err = helpers.ReadFile(inputFile)
 		if err != nil {
 			fmt.Println("Error reading input file:", err)
 			return
 		}
-		if !helpers.CheckSuffix(inputFile, ".vault") {
-			fmt.Println("Input file does not have .vault suffix")
+		encrypted, err := vault.IsEncryptedFile(inputFile)
+		if err != nil {
+			fmt.Println("Error checking if file is encrypted:", err)
+			return
+		}
+		if !encrypted {
+			fmt.Println("Input file is not an encrypted vault file")
 			return
 		}
 
 		helpers.LogVerbose("Confirming output file")
 		if outputFile == "" {
-			outputFile = helpers.RemoveSuffix(inputFile, ".vault")
+			outputFile = inputFile
 		}
 
 		helpers.LogVerbose("Decrypting file")
@@ -53,4 +58,6 @@ var decryptCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(decryptCmd)
+
+	decryptCmd.Flags().StringVar(&outputFile, "output", "", "Path to the output file")
 }
