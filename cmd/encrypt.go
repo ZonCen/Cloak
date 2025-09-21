@@ -18,36 +18,13 @@ var encryptCmd = &cobra.Command{
 		helpers.LogVerbose("Getting Arguments from command line")
 		inputFile := args[0]
 
-		helpers.LogVerbose("Checking if input file already is encrypted")
-		encrypted, err := vault.IsEncryptedFile(inputFile)
-		if err == nil && encrypted {
-			fmt.Println("input file is already encrypted. Please choose a different input file.")
-			return
-		}
-
-		rawKey, err := vault.GetEnv("CLOAK_KEY")
+		rawKey, err := vault.GetKey()
 		if err != nil {
 			fmt.Println("Error getting key from environment:", err)
 			return
 		}
 
-		helpers.LogVerbose("Checking if file exists")
-		_, err = helpers.ReadFile(inputFile)
-		if err != nil {
-			fmt.Println("Error reading input file:", err)
-			return
-		}
-
-		helpers.LogVerbose("Confirming output file")
-		if outputFile == "" {
-			outputFile = inputFile + ".vault"
-		}
-		if helpers.CheckSuffix(inputFile, ".vault") {
-			outputFile = inputFile
-		}
-
-		helpers.LogVerbose("Encrypting file")
-		err = vault.EncryptFile(rawKey, inputFile, outputFile)
+		err = vault.EncryptFile(inputFile, outputFile, rawKey)
 		if err != nil {
 			fmt.Println("Error encrypting file:", err)
 			return
@@ -60,5 +37,5 @@ var encryptCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(encryptCmd)
 
-	encryptCmd.Flags().StringVar(&outputFile, "output", "", "Path to the output file")
+	encryptCmd.Flags().StringVar(&outputFile, "output-file", "", "Path to the output file")
 }

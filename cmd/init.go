@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ZonCen/Cloak/internal/vault"
+	"github.com/ZonCen/Cloak/pkg/vault_logic"
 )
 
 // initCmd represents the init command
@@ -19,12 +20,12 @@ var initCmd = &cobra.Command{
 			return
 		}
 
-		key, err = vault.GenerateRandomByteKey(32)
+		genKey, err := vault_logic.GenerateRandomByteKey(32)
 		if err != nil {
 			fmt.Println("Error generating key:", err)
 			return
 		}
-		encodedKey := vault.EncodeKey(key)
+		encodedKey := vault_logic.EncodeKey(genKey)
 
 		fmt.Println("Your master key (store this securely!):", encodedKey)
 		fmt.Println("To run cloak please set the CLOAK_KEY environment variable")
