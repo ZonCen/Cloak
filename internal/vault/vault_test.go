@@ -1,29 +1,19 @@
 package vault
 
 import (
-	"fmt"
 	"os"
 	"testing"
 
 	testutils "github.com/ZonCen/Cloak/internal/testUtils"
 )
 
-func TestEncryptFile(t *testing.T) {
-	tmpFile, err := testutils.CreateTempFile()
-	if err != nil {
-		t.Fatalf("Failed to create temp file: %v", err)
-	}
+var (
+	rawKey   = []byte("12345678901234567890123456789012")
+	testData = []byte("Hello, World!")
+)
 
-	defer func() {
-		if err := os.Remove(tmpFile.Name()); err != nil {
-			fmt.Println("Failed to remove temp file:", err)
-		}
-	}()
-	defer func() {
-		if err := tmpFile.Close(); err != nil {
-			fmt.Println("Failed to close temp file:", err)
-		}
-	}()
+func TestEncryptFile(t *testing.T) {
+	tmpFile := testutils.CreateTempFileWithCleanup(t)
 
 	tests := []struct {
 		name    string
@@ -31,13 +21,13 @@ func TestEncryptFile(t *testing.T) {
 		key     []byte
 		wantErr bool
 	}{
-		{"valid decryption", tmpFile.Name(), []byte("12345678901234567890123456789012"), false},
+		{"valid decryption", tmpFile.Name(), rawKey, false},
 		{"invalid key length", tmpFile.Name(), []byte("shortkey"), true},
-		{"file does not exist", "non_existent_file.txt", []byte("12345678901234567890123456789012"), true},
+		{"file does not exist", "non_existent_file.txt", rawKey, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := EncryptFile(tt.key, string(tt.path), string(tt.path)+".vault")
+			err := EncryptFile(string(tt.path), string(tt.path)+".vault", tt.key)
 			if err != nil && !tt.wantErr {
 				t.Fatalf("EncryptFile() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -45,119 +35,320 @@ func TestEncryptFile(t *testing.T) {
 	}
 }
 
-func TestDecryptFile(t *testing.T) {
-	tmpFile, err := testutils.CreateTempFile()
-	if err != nil {
-		t.Fatalf("Failed to create temp file: %v", err)
-	}
-
-	defer func() {
-		if err := os.Remove(tmpFile.Name()); err != nil {
-			fmt.Println("Failed to remove temp file:", err)
-		}
-	}()
-	defer func() {
-		if err := tmpFile.Close(); err != nil {
-			fmt.Println("Failed to close temp file:", err)
-		}
-	}()
-
-	key := []byte("12345678901234567890123456789012")
-	err = EncryptFile(key, tmpFile.Name(), tmpFile.Name()+".vault")
-	if err != nil {
-		t.Fatalf("Failed to encrypt file for testing: %v", err)
-	}
-
-	content := []byte("Hello, World!")
-
+func TestEncryptData(t *testing.T) {
 	tests := []struct {
-		name      string
-		path      string
-		key       []byte
-		wantErr   bool
-		wantBytes []byte
+		name    string
+		data    []byte
+		key     []byte
+		wantErr bool
 	}{
-		{"valid decryption", tmpFile.Name() + ".vault", key, false, content},
-		{"invalid key length", tmpFile.Name() + ".vault", []byte("shortkey"), true, nil},
-		{"file does not exist", "non_existent_file.vault", key, true, nil},
-		{"invalid file format", tmpFile.Name(), key, true, nil},
-		{"invalid key", tmpFile.Name() + ".vault", []byte("12345678901234567890123456789013"), true, nil},
+		{"Working encrypt data", testData, rawKey, false},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := DecryptFile(tt.key, tt.path, tmpFile.Name())
-			if err != nil && !tt.wantErr {
-				t.Fatalf("DecryptFile() error = %v, wantErr %v", err, tt.wantErr)
+			encryptedData, err := EncryptData(tt.key, tt.data)
+			if err != nil {
+				t.Fatalf("EncryptData() error = %v", err)
 			}
-			if !tt.wantErr {
-				got, err := os.ReadFile(tmpFile.Name())
-				if err != nil {
-					t.Fatalf("Failed to read decrypted file: %v", err)
-				}
-				if string(got) != string(tt.wantBytes) {
-					t.Errorf("DecryptFile() = %s, want %s", got, tt.wantBytes)
-				}
+			if len(encryptedData) <= len(tt.data) {
+				t.Errorf("EncryptData() = %v, want length greater than %d", encryptedData, len(tt.data))
 			}
 		})
 	}
 }
 
-func TestEncodeAndDecodeKey(t *testing.T) {
-	key := []byte("12345678901234567890123456789012")
+func TestWriteEncryptedFile(t *testing.T) {
+	tmpFile := testutils.CreateTempFileWithCleanup(t)
 
-	encrypted := EncodeKey(key)
-	decrypted, err := DecodeKey(encrypted)
-	if err != nil {
-		t.Fatalf("DecodeKey() error = %v", err)
+	tests := []struct {
+		name    string
+		data    []byte
+		key     []byte
+		wantErr bool
+	}{
+		{"Working to write Encrypted file", testData, rawKey, false},
 	}
-	if string(decrypted) != string(key) {
-		t.Errorf("DecodeKey() = %s, want %s", decrypted, key)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := EncryptData(tt.key, tt.data)
+			if err != nil && !tt.wantErr {
+				t.Fatalf("Failed to encrypt data: %v", err)
+			}
+
+			err = WriteEncryptedFile(tmpFile.Name(), data)
+			if err != nil && !tt.wantErr {
+				t.Fatalf("WriteEncryptedFile() error = %v", err)
+			}
+		})
 	}
 }
 
-func TestIsEncryptedFile(t *testing.T) {
-	tmpFile, err := testutils.CreateTempFile()
-	if err != nil {
-		t.Fatalf("Failed to create temp file: %v", err)
+func TestDecryptFile(t *testing.T) {
+	tmpFile := testutils.CreateTempFileWithCleanup(t)
+
+	tests := []struct {
+		name    string
+		path    string
+		key     []byte
+		wantErr bool
+	}{
+		{"valid decryption", tmpFile.Name(), rawKey, false},
+		{"invalid key length", tmpFile.Name(), []byte("shortkey"), true},
+		{"file does not exist", "non_existent_file.txt", rawKey, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := EncryptFile(tmpFile.Name(), tmpFile.Name()+".vault", tt.key)
+			if err != nil && !tt.wantErr {
+				t.Fatalf("Failed to encrypt file: %v", err)
+			}
+			err = DecryptFile(string(tt.path)+".vault", string(tt.path)+".vault", tt.key)
+			if err != nil && !tt.wantErr {
+				t.Fatalf("Decryptfile() error = %v, wantErr = %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestReadEncryptedfile(t *testing.T) {
+	tmpFile := testutils.CreateTempFileWithCleanup(t)
+
+	tests := []struct {
+		name    string
+		path    string
+		wantErr bool
+		data    []byte
+	}{
+		{"can read file", tmpFile.Name(), false, testData},
 	}
 
-	defer func() {
-		if err := os.Remove(tmpFile.Name()); err != nil {
-			fmt.Println("Failed to remove temp file:", err)
-		}
-	}()
-	defer func() {
-		if err := tmpFile.Close(); err != nil {
-			fmt.Println("Failed to close temp file:", err)
-		}
-	}()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := EncryptFile(tmpFile.Name(), tmpFile.Name()+".vault", rawKey)
+			if err != nil && !tt.wantErr {
+				t.Fatalf("Failed to encrypt file: %v", err)
+			}
+			data, err := ReadEncryptedFile(tt.path + ".vault")
+			if err != nil && !tt.wantErr {
+				t.Fatalf("Failed to read encrypted file: %v", err)
+			}
 
-	key := []byte("12345678901234567890123456789012")
-	err = EncryptFile(key, tmpFile.Name(), tmpFile.Name()+".vault")
+			if string(data) == string(tt.data) && !tt.wantErr {
+				t.Fatalf("Data is not encrypted")
+			}
+		})
+	}
+}
+
+func TestCheckIsEncrypted(t *testing.T) {
+	tmpfile := testutils.CreateTempFileWithCleanup(t)
+	vaultFile := tmpfile.Name() + ".vault"
+
+	t.Cleanup(func() {
+		if err := os.Remove(vaultFile); err != nil && !os.IsNotExist(err) {
+			t.Logf("Failed to remove vault fule: %v", err)
+		}
+	})
+
+	err := EncryptFile(tmpfile.Name(), vaultFile, rawKey)
 	if err != nil {
-		t.Fatalf("Failed to encrypt file for testing: %v", err)
+		t.Fatalf("Failed to create encrypted temp file %v", vaultFile)
 	}
 
 	tests := []struct {
 		name    string
 		path    string
-		want    bool
 		wantErr bool
 	}{
-		{"encrypted file", tmpFile.Name() + ".vault", true, false},
-		{"unencrypted file", tmpFile.Name(), false, false},
-		{"non-existent file", "non_existent_file.vault", false, true},
+		{"Is encrypted", vaultFile, false},
+		{"Is not encrypted", tmpfile.Name(), true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := IsEncryptedFile(tt.path)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("IsEncryptedFile() error = %v, wantErr %v", err, tt.wantErr)
+			encrypted, err := CheckIsEncrypted(tt.path)
+			if err != nil && !tt.wantErr {
+				t.Fatalf("Error when checking if file is encrypted: %v", err)
 			}
-			if got != tt.want {
-				t.Errorf("IsEncryptedFile() = %v, want %v", got, tt.want)
+			if encrypted == tt.wantErr {
+				t.Fatalf("CheckIsEncrypted() failed, expected %v, got %v", tt.wantErr, encrypted)
+			}
+		})
+	}
+}
+
+func TestDecryptData(t *testing.T) {
+	tests := []struct {
+		name    string
+		key     []byte
+		data    []byte
+		wantErr bool
+	}{
+		{
+			name:    "example",
+			key:     rawKey,
+			data:    testData,
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			encrypted, err := EncryptData(tt.key, tt.data)
+			if err != nil {
+				t.Fatalf("Error when encrypting data: %v", err)
+			}
+			if string(encrypted) == string(tt.data) {
+				t.Fatal("The encryption have not encrypted the data")
+			}
+
+			decrypted_data, err := DecryptData(tt.key, encrypted)
+			if err != nil && !tt.wantErr {
+				t.Fatalf("Error when decrypting data: %v", err)
+			}
+
+			if string(decrypted_data) != string(tt.data) {
+				t.Fatalf("DecryptData() = %v, wanted same text as %v", decrypted_data, tt.data)
+			}
+		})
+	}
+}
+
+func TestReadEcnryptedFile(t *testing.T) {
+	tmpFile := testutils.CreateTempFileWithCleanup(t)
+	vaultFile := tmpFile.Name() + ".vault"
+	tmpFile2 := testutils.CreateTempFileWithCleanup(t)
+
+	err := EncryptFile(tmpFile.Name(), tmpFile.Name()+".vault", rawKey)
+	if err != nil {
+		t.Fatalf("Error encrypting file: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Remove(vaultFile); err != nil && !os.IsNotExist(err) {
+			t.Logf("Failed to remove vault fule: %v", err)
+		}
+	})
+
+	tests := []struct {
+		name    string
+		path    string
+		wantErr bool
+		data    []byte
+	}{
+		{
+			name:    "File exist and is encrypted",
+			path:    vaultFile,
+			wantErr: false,
+			data:    testData,
+		},
+		{
+			name:    "File exist but is not encrypted",
+			path:    tmpFile2.Name() + ".vault",
+			wantErr: true,
+			data:    testData,
+		},
+		{
+			name:    "File does not exist",
+			path:    "some_non_existing_file.vault",
+			wantErr: true,
+			data:    testData,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := ReadEncryptedFile(tt.path)
+			if err != nil && !tt.wantErr {
+				t.Fatalf("Failed to read the encrypted file %v, error: %v", tt.path, err)
+			}
+
+			if len(data) <= len(tt.data) && !tt.wantErr {
+				t.Fatalf("ReadEncryptedFile() = %v, want length greater than %d", data, len(tt.data))
+			}
+		})
+	}
+}
+
+func TestGetEnv(t *testing.T) {
+	tests := []struct {
+		name    string
+		env_key string
+		env_val string
+		wantErr bool
+	}{
+		{
+			name:    "Getting existing environment variable",
+			env_key: "CLOAK_KEY_TEST",
+			env_val: string(rawKey),
+			wantErr: false,
+		},
+		{
+			name:    "Getting none existing envornment variable",
+			env_key: "CLOAKY_DOAKY_MOAKY",
+			env_val: "",
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer func() {
+				if err := os.Setenv(tt.env_key, ""); err != nil {
+					t.Logf("Failed to reset environment %v, back to %v", tt.env_key, "")
+				}
+			}()
+			err := os.Setenv(tt.env_key, tt.env_val)
+			if err != nil {
+				t.Fatalf("Failed to set environment variable: %v with error: %v", tt.env_key, err)
+			}
+			envVar, err := GetEnv(tt.env_key)
+			if err != nil && !tt.wantErr {
+				t.Fatalf("Error getting the environment variable: %v", err)
+			}
+
+			if envVar != tt.env_val {
+				t.Fatalf("GetEnv() = %v, expected %v", envVar, tt.env_val)
+			}
+		})
+	}
+}
+
+func TestGetEditor(t *testing.T) {
+	tests := []struct {
+		name    string
+		env_key string
+		env_val string
+		expRes  string
+		wantErr bool
+	}{
+		{
+			name:    "Getting EDITOR=vim",
+			env_key: "EDITOR",
+			env_val: "vim",
+			expRes:  "vim",
+		},
+		{
+			name:    "Getting EDITOR=''",
+			env_key: "EDITOR",
+			env_val: "",
+			expRes:  "vi",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			oldVal := os.Getenv(tt.env_key)
+			defer func() {
+				if err := os.Setenv(tt.env_key, oldVal); err != nil {
+					t.Logf("Failed to reset environment %v, back to %v", tt.env_key, oldVal)
+				}
+			}()
+			err := os.Setenv(tt.env_key, tt.env_val)
+			if err != nil {
+				t.Fatalf("Error setting the environment variable: %v", err)
+			}
+
+			editor := GetEditor()
+
+			if editor != tt.expRes {
+				t.Fatalf("GetEditor() = %v, expected %v", editor, tt.expRes)
 			}
 		})
 	}

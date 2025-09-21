@@ -1,86 +1,62 @@
 package vault
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
 	"fmt"
 
 	"github.com/ZonCen/Cloak/internal/helpers"
+	"github.com/ZonCen/Cloak/pkg/vault_logic"
 )
 
-type FileHeader struct {
-	Magic   [4]byte
-	Version byte
-}
+func EncryptFile(inputFile, outputFile string, rawKey []byte) error {
+	helpers.LogVerbose("Checking if input file already is encrypted")
+	encrypted, err := CheckIsEncrypted(inputFile)
+	if err == nil && encrypted {
+		return fmt.Errorf("input file is already encrypted. Please choose a different input file")
+	}
 
-func EncryptFile(key []byte, inputPath, outputPath string) error {
-	plaintext, err := helpers.OpenFile(inputPath)
+	helpers.LogVerbose("Checking if file exists")
+	data, err := ReadEncryptedFile(inputFile)
+	if err != nil {
+		return fmt.Errorf("error reading input file: %w", err)
+	}
+
+	helpers.LogVerbose("Confirming output file")
+	if outputFile == "" {
+		outputFile = inputFile + ".vault"
+	}
+	if helpers.CheckSuffix(inputFile, ".vault") {
+		outputFile = inputFile
+	}
+
+	finalData, err := EncryptData(rawKey, data)
 	if err != nil {
 		return err
 	}
-	block, err := CreateCipher(key)
+
+	err = WriteEncryptedFile(outputFile, finalData)
 	if err != nil {
 		return err
 	}
 
-	gcm, err := GenerateGCM(block)
-	if err != nil {
-		return err
-	}
-
-	nonce, err := GenerateNonce(gcm.NonceSize())
-	if err != nil {
-		return err
-	}
-
-	ciphertext := gcm.Seal(nil, nonce, plaintext, nil)
-
-	header := BuildHeader()
-	finalData := append(header, nonce...)
-	finalData = append(finalData, ciphertext...)
-
-	return helpers.WriteFile(outputPath, finalData)
+	return nil
 }
 
-func CreateCipher(key []byte) (cipher.Block, error) {
-	helpers.LogVerbose("Creating AES cipher")
-	block, err := aes.NewCipher(key)
+func EncryptData(key, data []byte) ([]byte, error) {
+	helpers.LogVerbose("Encrypting data")
+	finalData, err := vault_logic.EncryptData(key, data)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create cipher: %w", err)
+		return nil, fmt.Errorf("error encrypting file: %w", err)
 	}
 
-	return block, nil
+	return finalData, nil
 }
 
-func GenerateGCM(block cipher.Block) (cipher.AEAD, error) {
-	helpers.LogVerbose("Generating GCM")
-	gcm, err := cipher.NewGCM(block)
+func WriteEncryptedFile(outputFile string, data []byte) error {
+	helpers.LogVerbose("Writing encrypted data to file")
+	err := helpers.WriteFile(outputFile, data)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create GCM: %w", err)
-	}
-	return gcm, nil
-}
-
-func GenerateNonce(size int) ([]byte, error) {
-	helpers.LogVerbose("Generating nonce")
-	nonce := make([]byte, size)
-	if _, err := rand.Read(nonce); err != nil {
-		return nil, fmt.Errorf("failed to generate nonce: %w", err)
+		return fmt.Errorf("error writing encrypted data to file: %w", err)
 	}
 
-	return nonce, nil
-}
-
-func BuildHeader() []byte {
-	helpers.LogVerbose("Building file header")
-	var header FileHeader
-	copy(header.Magic[:], []byte("CLOK"))
-	header.Version = 1
-
-	buf := make([]byte, 0, 5)
-	buf = append(buf, header.Magic[:]...)
-	buf = append(buf, header.Version)
-
-	return buf
+	return nil
 }

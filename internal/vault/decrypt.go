@@ -1,135 +1,80 @@
 package vault
 
 import (
-	"crypto/cipher"
 	"fmt"
-	"os"
 
 	"github.com/ZonCen/Cloak/internal/helpers"
+	"github.com/ZonCen/Cloak/pkg/vault_logic"
 )
 
-func IsEncryptedFile(path string) (bool, error) {
-	f, err := os.Open(path)
+func DecryptFile(inputFile, outputFile string, rawKey []byte) error {
+	_, err := CheckIsEncrypted(inputFile)
 	if err != nil {
-		return false, err
+		return fmt.Errorf("error while checking if file is encrypted: %w", err)
 	}
-	defer func() {
-		if err := f.Close(); err != nil {
-			panic(err)
-		}
-	}()
 
-	header := make([]byte, 5)
-	n, err := f.Read(header)
+	data, err := ReadEncryptedFile(inputFile)
 	if err != nil {
-		return false, fmt.Errorf("failed to read file header: %w", err)
+		return fmt.Errorf("error reading input file: %w", err)
 	}
 
-	if n < 5 {
-		return false, fmt.Errorf("file too short to be a valid Cloak encrypted file")
+	helpers.LogVerbose("Confirming output file")
+	if outputFile == "" {
+		outputFile = inputFile
 	}
 
-	if string(header[:4]) == "CLOK" && header[4] == 1 {
-		return true, nil
-	}
-
-	return false, nil
-}
-
-func ExtractNonce(data []byte, gcm cipher.AEAD) ([]byte, []byte, error) {
-	nonceSize := gcm.NonceSize()
-	if len(data) < nonceSize {
-		return nil, nil, fmt.Errorf("ciphertext too short: %d bytes", len(data))
-	}
-
-	nonce := data[:nonceSize]
-	cipherText := data[nonceSize:]
-
-	return nonce, cipherText, nil
-}
-
-func DecryptFile(key []byte, inputPath, outputPath string) error {
-	plaintext, err := ReadEncryptedFile(key, inputPath)
+	decrypted_data, err := DecryptData(rawKey, data)
 	if err != nil {
 		return err
 	}
 
-	return helpers.WriteFile(outputPath, plaintext)
+	err = WriteDecryptedFile(outputFile, decrypted_data)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
-func ReadEncryptedFile(key []byte, inputPath string) ([]byte, error) {
-	data, err := helpers.ReadFile(inputPath)
+func ReadEncryptedFile(inputFile string) ([]byte, error) {
+	helpers.LogVerbose("Checking if file exists and is a vault file")
+	data, err := helpers.ReadFile(inputFile)
 	if err != nil {
 		return nil, err
 	}
 
-	block, err := CreateCipher(key)
-	if err != nil {
-		return nil, err
-	}
-
-	gcm, err := GenerateGCM(block)
-	if err != nil {
-		return nil, err
-	}
-
-	header, nonce, cipherText, err := ExtractHeaderAndNonce(data, gcm)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := ValidateHeader(header); err != nil {
-		return nil, err
-	}
-
-	plaintext, err := gcm.Open(nil, nonce, cipherText, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt data: %w", err)
-	}
-
-	return plaintext, nil
+	return data, nil
 }
 
-func GetEnv(env string) ([]byte, error) {
-	helpers.LogVerbose("Fecthing key from environment variable")
-	key := os.Getenv(env)
-	if key == "" {
-		return nil, fmt.Errorf("%s environment variable is not set", env)
-	}
-	rawKey, err := DecodeKey(key)
+func CheckIsEncrypted(inputFile string) (bool, error) {
+	helpers.LogVerbose("Checking if input file is encrypted")
+	encrypted, err := vault_logic.IsEncryptedFile(inputFile)
 	if err != nil {
-		return nil, fmt.Errorf("error decoding key: %w", err)
+		return false, err
 	}
-	if len(rawKey) != 32 {
-		return nil, fmt.Errorf("invalid key length: must be 32 bytes for AES-256")
+	if !encrypted {
+		return false, fmt.Errorf("input file is not an encrypted vault file")
 	}
 
-	return rawKey, nil
+	return true, nil
 }
 
-func ExtractHeaderAndNonce(data []byte, gcm cipher.AEAD) ([]byte, []byte, []byte, error) {
-	helpers.LogVerbose("Extracting header and nonce from data")
-	headerSize := 5
-	nonceSize := gcm.NonceSize()
-	if len(data) < headerSize+nonceSize {
-		return nil, nil, nil, fmt.Errorf("file too short: got %d bytes", len(data))
+func DecryptData(key, data []byte) ([]byte, error) {
+	helpers.LogVerbose("Decrypting data")
+	decrypted_data, err := vault_logic.DecryptData(key, data)
+	if err != nil {
+		return nil, fmt.Errorf("error decrypting data: %w", err)
 	}
 
-	header := data[:headerSize]
-	nonce := data[headerSize : headerSize+nonceSize]
-	ciphertext := data[headerSize+nonceSize:]
-
-	return header, nonce, ciphertext, nil
+	return decrypted_data, nil
 }
 
-func ValidateHeader(header []byte) error {
-	helpers.LogVerbose("Validating file header")
-	if string(header[:4]) != "CLOK" {
-		return fmt.Errorf("invalid file format: missing CLOK magic bytes")
+func WriteDecryptedFile(outputFile string, data []byte) error {
+	helpers.LogVerbose("Writing decrypted data to file")
+	err := helpers.WriteFile(outputFile, data)
+	if err != nil {
+		return fmt.Errorf("error writing decrypted data to file: %w", err)
 	}
-	version := header[4]
-	if version != 1 {
-		return fmt.Errorf("unsupported file version: %d", version)
-	}
+
 	return nil
 }
